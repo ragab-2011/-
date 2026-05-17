@@ -1,0 +1,8 @@
+{
+  "name": "Remix: منصة الصيدلية الذكية",
+  "description": "منصة احترافية متكاملة لإدارة الصيدليات، تشمل إدارة المبيعات، التقارير الذكية، ومساعد الذكاء الاصطناعي الطبي.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
