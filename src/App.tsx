@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, ReactNode, RefObject } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, Trash2, Pill, Wallet, ChevronLeft, ChevronRight, 
@@ -37,6 +37,496 @@ interface ChatMessage {
 }
 
 type View = 'home' | 'pharmacy' | 'ai' | 'reports' | 'about' | 'contact' | 'privacy';
+
+interface HeroSectionProps {
+  setCurrentView: (view: View) => void;
+}
+
+interface PharmacyViewProps {
+  meds: Medication[];
+  calculateTotal: (items: Medication[]) => number;
+  name: string;
+  setName: (val: string) => void;
+  price: string;
+  setPrice: (val: string) => void;
+  addMed: () => void;
+  searchQuery: string;
+  setSearchQuery: (val: string) => void;
+  filteredMeds: Medication[];
+  confirmStartNewDay: () => void;
+  deleteMed: (id: string) => void;
+}
+
+interface AIViewProps {
+  chatMessages: ChatMessage[];
+  isTyping: boolean;
+  chatScrollRef: RefObject<HTMLDivElement | null>;
+  chatInput: string;
+  setChatInput: (val: string) => void;
+  handleSendMessage: () => void;
+}
+
+interface ReportsViewProps {
+  history: DailyRecord[];
+}
+
+interface StaticViewProps {
+  type: 'about' | 'contact' | 'privacy';
+}
+
+interface NavItemProps {
+  view: View;
+  icon: ReactNode;
+  label: string;
+  currentView: View;
+  setCurrentView: (view: View) => void;
+  setIsSidebarOpen: (val: boolean) => void;
+}
+
+// --- Sub-components (Moved outside to prevent focus loss) ---
+
+const HeroSection = ({ setCurrentView }: HeroSectionProps) => (
+  <div className="w-full flex flex-col items-center gap-12 py-16 px-6">
+    <div className="max-w-4xl text-center space-y-6">
+      <motion.h1 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-5xl md:text-7xl font-black text-text-main leading-tight"
+      >
+        أدر صيدليتك <span className="text-primary italic">بذكاء ونظام</span>
+      </motion.h1>
+      <motion.p 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="text-xl text-text-muted max-w-2xl mx-auto"
+      >
+        نظام متكامل لإدارة المبيعات اليومية، تتبع الأرباح، والاستعانة بالذكاء الاصطناعي لتطوير خدماتك الصيدلانية.
+      </motion.p>
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="flex flex-wrap justify-center gap-4 pt-4"
+      >
+        <button 
+          onClick={() => setCurrentView('pharmacy')}
+          className="px-8 py-4 bg-primary hover:bg-primary-hover text-white rounded-2xl font-bold text-lg shadow-xl shadow-primary/20 transition-all transform hover:scale-105 active:scale-95 flex items-center gap-2"
+        >
+          ادخل للنظام <ArrowRight className="w-5 h-5 rotate-180" />
+        </button>
+        <button 
+          onClick={() => setCurrentView('about')}
+          className="px-8 py-4 bg-bg-card border-2 border-border text-text-main rounded-2xl font-bold text-lg hover:border-primary transition-all transform hover:scale-105 active:scale-95"
+        >
+          تعرف علينا
+        </button>
+      </motion.div>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl">
+      {[
+        { icon: <LayoutDashboard size={32} />, title: "إدارة المبيعات", desc: "تسجيل المبيعات اليومية بدقة وسهولة متناهية." },
+        { icon: <Bot size={32} />, title: "مساعد ذكي", desc: "ذكاء اصطناعي متخصص للإجابة على استفساراتك الطبية." },
+        { icon: <TrendingUp size={32} />, title: "إحصائيات دقيقة", desc: "تقارير ورسوم بيانية توضح أداء صيدليتك يومياً." },
+      ].map((f, i) => (
+        <motion.div 
+          key={i}
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.3 + i * 0.1 }}
+          className="p-8 bg-bg-card border border-border rounded-[32px] shadow-sm hover:shadow-xl transition-all group"
+        >
+          <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-6 group-hover:scale-110 transition-transform">
+            {f.icon}
+          </div>
+          <h3 className="text-xl font-bold mb-3">{f.title}</h3>
+          <p className="text-text-muted leading-relaxed">{f.desc}</p>
+        </motion.div>
+      ))}
+    </div>
+
+    <div className="w-full max-w-6xl h-32 bg-slate-100 dark:bg-slate-800/50 rounded-[32px] border-2 border-dashed border-border flex items-center justify-center text-text-muted italic">
+      مساحة إعلانية مستقبلية
+    </div>
+  </div>
+);
+
+const PharmacyView = ({ 
+  meds, calculateTotal, name, setName, price, setPrice, addMed, 
+  searchQuery, setSearchQuery, filteredMeds, confirmStartNewDay, deleteMed 
+}: PharmacyViewProps) => (
+  <div className="w-full max-w-5xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="space-y-1 text-center md:text-right">
+        <h2 className="text-3xl font-black text-text-main">نظام المبيعات</h2>
+        <p className="text-text-muted">{new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+      </div>
+      <div className="flex gap-4">
+        <div className="bg-bg-card p-4 rounded-2xl border border-border shadow-sm flex flex-col items-center min-w-[140px]">
+           <span className="text-xs text-text-muted font-bold mb-1">عدد الأصناف</span>
+           <span className="text-2xl font-black text-primary">{meds.length}</span>
+        </div>
+        <div className="bg-bg-card p-4 rounded-2xl border border-border shadow-sm flex flex-col items-center min-w-[140px]">
+           <span className="text-xs text-text-muted font-bold mb-1">الإجمالي</span>
+           <span className="text-2xl font-black text-primary">{calculateTotal(meds).toFixed(2)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div className="bg-bg-card p-8 rounded-[32px] border border-border shadow-md">
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-4 items-end">
+        <div className="space-y-2">
+          <label className="text-sm font-bold px-2">اسم العلاج</label>
+          <input 
+            type="text" 
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="مثال: بانادول إكسترا"
+            className="w-full h-14 px-6 bg-bg-main border-2 border-transparent focus:border-primary rounded-2xl text-lg outline-none transition-all placeholder:text-text-muted/40"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-bold px-2">السعر</label>
+          <input 
+            type="text" 
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            placeholder="0.00"
+            className="w-32 h-14 px-6 bg-bg-main border-2 border-transparent focus:border-primary rounded-2xl text-lg outline-none transition-all placeholder:text-text-muted/40 text-center"
+          />
+        </div>
+        <button 
+          onClick={addMed}
+          className="h-14 bg-primary hover:bg-primary-hover text-white px-8 rounded-2xl font-bold shadow-lg shadow-primary/20 transition-all transform active:scale-95 flex items-center gap-2"
+        >
+          <Plus size={24} /> إضافة
+        </button>
+      </div>
+    </div>
+
+    <div className="bg-bg-card p-6 rounded-[32px] border border-border shadow-md space-y-4">
+      <div className="relative">
+        <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-text-muted w-5 h-5" />
+        <input 
+          type="text"
+          placeholder="بحث في مبيعات اليوم..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full h-12 pr-12 pl-4 bg-bg-main border-border border rounded-xl outline-none focus:border-primary transition-all"
+        />
+      </div>
+
+      <div className="overflow-hidden border border-border/50 rounded-2xl">
+        <table className="w-full text-right">
+          <thead className="bg-bg-main border-b border-border">
+            <tr>
+              <th className="p-4 text-xs font-bold text-text-muted">اسم العلاج</th>
+              <th className="p-4 text-xs font-bold text-text-muted">السعر</th>
+              <th className="p-4 text-xs font-bold text-text-muted text-center w-24">إجراء</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredMeds.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="p-12 text-center text-text-muted italic">لا توجد سجلات مطابقة</td>
+              </tr>
+            ) : (
+              filteredMeds.map((m) => (
+                <tr key={m.id} className="border-b border-border/30 last:border-0 hover:bg-bg-main/50 transition-colors">
+                  <td className="p-4 font-bold">{m.name}</td>
+                  <td className="p-4 font-black text-primary">{m.price} ج.م</td>
+                  <td className="p-4 text-center">
+                    <button 
+                      onClick={() => deleteMed(m.id)}
+                      className="p-2 text-danger hover:bg-danger/10 rounded-lg transition-colors"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <button 
+      onClick={confirmStartNewDay}
+      className="w-full h-16 border-2 border-dashed border-primary/40 hover:border-primary text-primary font-bold rounded-2xl flex items-center justify-center gap-2 transition-all hover:bg-primary/5"
+    >
+      <RotateCcw className="w-5 h-5" /> بدء يوم جديد وأرشفة الحالي
+    </button>
+  </div>
+);
+
+const AIView = ({ 
+  chatMessages, isTyping, chatScrollRef, chatInput, setChatInput, handleSendMessage 
+}: AIViewProps) => (
+  <div className="w-full max-w-4xl h-[75vh] bg-bg-card rounded-[32px] border border-border shadow-xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-500">
+    <div className="p-6 bg-primary text-white flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
+          <Bot size={28} />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold leading-none text-white">المساعد الذكي</h2>
+          <span className="text-xs text-white/70">متصل وجاهز للمساعدة</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+        <span className="text-xs font-bold">نشط</span>
+      </div>
+    </div>
+
+    <div 
+      ref={chatScrollRef}
+      className="flex-grow p-8 overflow-y-auto space-y-6 bg-slate-50 dark:bg-slate-900/30"
+    >
+      {chatMessages.map(msg => (
+        <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div className={`max-w-[80%] p-5 rounded-[24px] text-base leading-relaxed shadow-sm ${
+            msg.role === 'user' 
+              ? 'bg-primary text-white rounded-br-none' 
+              : 'bg-bg-card text-text-main border border-border rounded-bl-none'
+          }`}>
+            {msg.role === 'assistant' && (
+              <div className="flex items-center gap-2 mb-2 text-primary">
+                <Sparkles size={16} />
+                <span className="text-[10px] font-black uppercase">الرد الذكي</span>
+              </div>
+            )}
+            {msg.content}
+          </div>
+        </div>
+      ))}
+      {isTyping && (
+        <div className="flex justify-start">
+          <div className="bg-bg-card border border-border p-4 rounded-[24px] rounded-bl-none shadow-sm flex items-center gap-3">
+            <Loader2 className="w-5 h-5 text-primary animate-spin" />
+            <span className="text-sm font-bold text-text-muted">جاري المعالجة...</span>
+          </div>
+        </div>
+      )}
+    </div>
+
+    <div className="p-6 border-t border-border bg-bg-card">
+      <form 
+        onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}
+        className="flex items-center gap-4 px-6 h-16 bg-bg-main border-2 border-transparent focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/5 rounded-2xl transition-all shadow-inner"
+      >
+        <input 
+          type="text" 
+          value={chatInput}
+          onChange={(e) => setChatInput(e.target.value)}
+          placeholder="اسأل عن الأدوية، الجرعات، أو موانع الاستعمال..."
+          className="flex-grow bg-transparent outline-none text-right font-medium"
+        />
+        <button 
+          type="submit"
+          disabled={!chatInput.trim() || isTyping}
+          className="w-12 h-12 bg-primary hover:bg-primary-hover disabled:opacity-30 text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95"
+        >
+          <Send className="w-5 h-5 rotate-180" />
+        </button>
+      </form>
+    </div>
+  </div>
+);
+
+const ReportsView = ({ history }: ReportsViewProps) => {
+  const chartData = useMemo(() => {
+    return [...history].reverse().slice(-7).map(h => ({
+      name: h.date.split('،')[1]?.trim().split(' ')[0] || h.date,
+      total: h.total
+    }));
+  }, [history]);
+
+  const totalRevenue = history.reduce((sum, h) => sum + h.total, 0);
+  const totalOps = history.reduce((sum, h) => sum + h.meds.length, 0);
+
+  return (
+    <div className="w-full max-w-5xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="p-8 bg-bg-card border border-border rounded-[32px] shadow-sm flex flex-col items-center text-center">
+          <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-4">
+            <Wallet size={28} />
+          </div>
+          <h4 className="text-text-muted text-sm font-bold mb-1">إجمالي الأرباح</h4>
+          <div className="text-3xl font-black text-primary">{totalRevenue.toFixed(2)}</div>
+        </div>
+        <div className="p-8 bg-bg-card border border-border rounded-[32px] shadow-sm flex flex-col items-center text-center">
+          <div className="w-14 h-14 bg-accent/10 rounded-2xl flex items-center justify-center text-accent mb-4">
+            <Activity size={28} />
+          </div>
+          <h4 className="text-text-muted text-sm font-bold mb-1">إجمالي العمليات</h4>
+          <div className="text-3xl font-black text-accent">{totalOps}</div>
+        </div>
+        <div className="p-8 bg-bg-card border border-border rounded-[32px] shadow-sm flex flex-col items-center text-center">
+          <div className="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 mb-4">
+            <Calendar size={28} />
+          </div>
+          <h4 className="text-text-muted text-sm font-bold mb-1">الأيام النشطة</h4>
+          <div className="text-3xl font-black text-indigo-500">{history.length}</div>
+        </div>
+      </div>
+
+      <div className="bg-bg-card p-8 rounded-[32px] border border-border shadow-md">
+        <h3 className="text-xl font-black mb-8 flex items-center gap-2">
+          <BarChart3 className="text-primary" /> نمو المبيعات (آخر ٧ أيام)
+        </h3>
+        <div className="h-[350px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+              <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
+              <Tooltip 
+                contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px' }}
+              />
+              <Area type="monotone" dataKey="total" stroke="var(--primary)" strokeWidth={4} fillOpacity={1} fill="url(#colorTotal)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="bg-bg-card p-8 rounded-[32px] border border-border shadow-md">
+        <h3 className="text-xl font-black mb-6">الأيام السابقة بالتفصيل</h3>
+        <div className="flex flex-col gap-4">
+          {history.length === 0 ? (
+            <p className="text-center py-12 text-text-muted italic">لا يوجد سجل تاريخي متاح حالياً</p>
+          ) : (
+            history.map((record, i) => (
+              <div key={i} className="flex flex-col md:flex-row items-center justify-between p-6 bg-bg-main border border-border rounded-2xl hover:border-primary transition-colors gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-white dark:bg-bg-card border border-border rounded-xl flex items-center justify-center font-bold text-text-muted">
+                    {i + 1}
+                  </div>
+                  <div>
+                    <h5 className="font-bold">{record.date}</h5>
+                    <span className="text-xs text-text-muted font-bold uppercase">{record.meds.length} عملية بيع</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-xl font-black text-primary">{record.total.toFixed(2)} ج.م</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="w-full h-32 bg-slate-100 dark:bg-slate-800/50 rounded-[32px] border-2 border-dashed border-border flex items-center justify-center text-text-muted italic">
+        مساحة إعلانية مستقبلية
+      </div>
+    </div>
+  );
+};
+
+const StaticView = ({ type }: StaticViewProps) => {
+  const titles = { about: 'عن المنصة', contact: 'اتصل بنا', privacy: 'سياسة الخصوصية' };
+  return (
+    <div className="w-full max-w-4xl bg-bg-card p-12 rounded-[40px] border border-border shadow-xl space-y-8 animate-in fade-in scale-95 duration-500">
+      <h2 className="text-4xl font-black text-text-main text-center">{titles[type]}</h2>
+      
+      {type === 'about' && (
+        <div className="prose prose-slate dark:prose-invert max-w-none space-y-6">
+          <p className="text-lg text-text-muted text-center leading-relaxed">
+            تعد منصة الصيدلية الذكية رائدة في توفير الحلول الرقمية للصيادلة في الوطن العربي، حيث ندمج سهولة الإدارة مع كفاءة الذكاء الاصطناعي لتوفير تجربة عمل سلسة ومثمرة.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-8">
+            <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-border">
+              <CheckCircle2 className="text-primary mb-3" />
+              <h4 className="font-bold mb-2">رؤيتنا</h4>
+              <p className="text-sm opacity-80">تحويل كل صيدلية إلى وحدة ذكية تعمل بأقصى كفاءة وبأقل مجهود يدوي.</p>
+            </div>
+            <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-border">
+              <CheckCircle2 className="text-primary mb-3" />
+              <h4 className="font-bold mb-2">قيمة العمل</h4>
+              <p className="text-sm opacity-80">الدقة المطلقة في الحسابات وتوفير المعلومات الطبية الفورية والموثوقة.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {type === 'contact' && (
+        <div className="space-y-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-center">
+            <div className="p-8 bg-slate-50 dark:bg-slate-800 rounded-[32px] space-y-4">
+               <Mail className="w-12 h-12 text-primary mx-auto" />
+               <h4 className="font-bold">البريد الإلكتروني</h4>
+               <p className="text-primary font-bold">support@smartpharm.com</p>
+            </div>
+            <div className="p-8 bg-slate-50 dark:bg-slate-800 rounded-[32px] space-y-4">
+               <Users className="w-12 h-12 text-primary mx-auto" />
+               <h4 className="font-bold">الدعم الفني</h4>
+               <p className="text-primary font-bold">متاح ٢٤/٧ لصيادلتنا</p>
+            </div>
+          </div>
+          <form className="bg-bg-main p-8 rounded-3xl border border-border space-y-6">
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold">الاسم</label>
+                  <input className="w-full h-12 px-4 bg-bg-card border border-border rounded-xl outline-none focus:border-primary" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold">البريد</label>
+                  <input className="w-full h-12 px-4 bg-bg-card border border-border rounded-xl outline-none focus:border-primary" />
+                </div>
+             </div>
+             <div className="space-y-2">
+                <label className="text-sm font-bold">الرسالة</label>
+                <textarea className="w-full h-32 p-4 bg-bg-card border border-border rounded-xl outline-none focus:border-primary resize-none" />
+             </div>
+             <button className="w-full h-14 bg-primary text-white font-bold rounded-2xl shadow-lg shadow-primary/20 hover:bg-primary-hover transition-all">إرسال الاستفسار</button>
+          </form>
+        </div>
+      )}
+
+      {type === 'privacy' && (
+        <div className="space-y-6 text-right leading-loose">
+          <section className="space-y-3">
+            <h3 className="text-xl font-bold border-r-4 border-primary pr-3">خصوصية البيانات</h3>
+            <p className="text-text-muted">نحن نؤمن بأن بيانات صيدليتك هي ملكك بالكامل. يتم تخزين جميع السجلات محلياً في متصفحك ولا نطلع على مبيعاتك أو بيانات مرضاك.</p>
+          </section>
+          <section className="space-y-3">
+            <h3 className="text-xl font-bold border-r-4 border-primary pr-3">مساعد الذكاء الاصطناعي</h3>
+            <p className="text-text-muted">عند استخدام الشات، يتم إرسال الأسئلة لمعالجتها دون تخزين معلومات شخصية مرتبطة بها، وذلك لضمان جودة الردود الطبية.</p>
+          </section>
+          <section className="space-y-3">
+            <h3 className="text-xl font-bold border-r-4 border-primary pr-3">التحديثات المستمرة</h3>
+            <p className="text-text-muted">نقوم بتحديث بروتوكولات الأمان دورياً لضمان استقرار المنصة وحماية بيانات المستخدمين من أي تهديدات تقنية.</p>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const NavItem = ({ view, icon, label, currentView, setCurrentView, setIsSidebarOpen }: NavItemProps) => (
+  <button 
+    onClick={() => { setCurrentView(view); setIsSidebarOpen(false); }}
+    className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold transition-all ${
+      currentView === view 
+        ? 'bg-primary text-white shadow-lg shadow-primary/20 translate-x-1' 
+        : 'text-text-muted hover:bg-primary/5 hover:text-primary'
+    }`}
+  >
+    {icon}
+    <span className="text-sm">{label}</span>
+    {currentView === view && (
+      <motion.div layoutId="nav-pill" className="mr-auto w-1.5 h-6 bg-white rounded-full" />
+    )}
+  </button>
+);
 
 // --- Main Application ---
 export default function App() {
@@ -189,446 +679,6 @@ export default function App() {
 
   // --- Views ---
 
-  const HeroSection = () => (
-    <div className="w-full flex flex-col items-center gap-12 py-16 px-6">
-      <div className="max-w-4xl text-center space-y-6">
-        <motion.h1 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-5xl md:text-7xl font-black text-text-main leading-tight"
-        >
-          أدر صيدليتك <span className="text-primary italic">بذكاء ونظام</span>
-        </motion.h1>
-        <motion.p 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="text-xl text-text-muted max-w-2xl mx-auto"
-        >
-          نظام متكامل لإدارة المبيعات اليومية، تتبع الأرباح، والاستعانة بالذكاء الاصطناعي لتطوير خدماتك الصيدلانية.
-        </motion.p>
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="flex flex-wrap justify-center gap-4 pt-4"
-        >
-          <button 
-            onClick={() => setCurrentView('pharmacy')}
-            className="px-8 py-4 bg-primary hover:bg-primary-hover text-white rounded-2xl font-bold text-lg shadow-xl shadow-primary/20 transition-all transform hover:scale-105 active:scale-95 flex items-center gap-2"
-          >
-            ادخل للنظام <ArrowRight className="w-5 h-5 rotate-180" />
-          </button>
-          <button 
-            onClick={() => setCurrentView('about')}
-            className="px-8 py-4 bg-bg-card border-2 border-border text-text-main rounded-2xl font-bold text-lg hover:border-primary transition-all transform hover:scale-105 active:scale-95"
-          >
-            تعرف علينا
-          </button>
-        </motion.div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl">
-        {[
-          { icon: <LayoutDashboard size={32} />, title: "إدارة المبيعات", desc: "تسجيل المبيعات اليومية بدقة وسهولة متناهية." },
-          { icon: <Bot size={32} />, title: "مساعد ذكي", desc: "ذكاء اصطناعي متخصص للإجابة على استفساراتك الطبية." },
-          { icon: <TrendingUp size={32} />, title: "إحصائيات دقيقة", desc: "تقارير ورسوم بيانية توضح أداء صيدليتك يومياً." },
-        ].map((f, i) => (
-          <motion.div 
-            key={i}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.3 + i * 0.1 }}
-            className="p-8 bg-bg-card border border-border rounded-[32px] shadow-sm hover:shadow-xl transition-all group"
-          >
-            <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-6 group-hover:scale-110 transition-transform">
-              {f.icon}
-            </div>
-            <h3 className="text-xl font-bold mb-3">{f.title}</h3>
-            <p className="text-text-muted leading-relaxed">{f.desc}</p>
-          </motion.div>
-        ))}
-      </div>
-
-      <div className="w-full max-w-6xl h-32 bg-slate-100 dark:bg-slate-800/50 rounded-[32px] border-2 border-dashed border-border flex items-center justify-center text-text-muted italic">
-        مساحة إعلانية مستقبلية
-      </div>
-    </div>
-  );
-
-  const PharmacyView = () => (
-    <div className="w-full max-w-5xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-        <div className="space-y-1 text-center md:text-right">
-          <h2 className="text-3xl font-black text-text-main">نظام المبيعات</h2>
-          <p className="text-text-muted">{new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-        </div>
-        <div className="flex gap-4">
-          <div className="bg-bg-card p-4 rounded-2xl border border-border shadow-sm flex flex-col items-center min-w-[140px]">
-             <span className="text-xs text-text-muted font-bold mb-1">عدد الأصناف</span>
-             <span className="text-2xl font-black text-primary">{meds.length}</span>
-          </div>
-          <div className="bg-bg-card p-4 rounded-2xl border border-border shadow-sm flex flex-col items-center min-w-[140px]">
-             <span className="text-xs text-text-muted font-bold mb-1">الإجمالي</span>
-             <span className="text-2xl font-black text-primary">{calculateTotal(meds).toFixed(2)}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-bg-card p-8 rounded-[32px] border border-border shadow-md">
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-4 items-end">
-          <div className="space-y-2">
-            <label className="text-sm font-bold px-2">اسم العلاج</label>
-            <input 
-              type="text" 
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="مثال: بانادول إكسترا"
-              className="w-full h-14 px-6 bg-bg-main border-2 border-transparent focus:border-primary rounded-2xl text-lg outline-none transition-all placeholder:text-text-muted/40"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-bold px-2">السعر</label>
-            <input 
-              type="text" 
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="0.00"
-              className="w-32 h-14 px-6 bg-bg-main border-2 border-transparent focus:border-primary rounded-2xl text-lg outline-none transition-all placeholder:text-text-muted/40 text-center"
-            />
-          </div>
-          <button 
-            onClick={addMed}
-            className="h-14 bg-primary hover:bg-primary-hover text-white px-8 rounded-2xl font-bold shadow-lg shadow-primary/20 transition-all transform active:scale-95 flex items-center gap-2"
-          >
-            <Plus size={24} /> إضافة
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-bg-card p-6 rounded-[32px] border border-border shadow-md space-y-4">
-        <div className="relative">
-          <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-text-muted w-5 h-5" />
-          <input 
-            type="text"
-            placeholder="بحث في مبيعات اليوم..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-12 pr-12 pl-4 bg-bg-main border-border border rounded-xl outline-none focus:border-primary transition-all"
-          />
-        </div>
-
-        <div className="overflow-hidden border border-border/50 rounded-2xl">
-          <table className="w-full text-right">
-            <thead className="bg-bg-main border-b border-border">
-              <tr>
-                <th className="p-4 text-xs font-bold text-text-muted">اسم العلاج</th>
-                <th className="p-4 text-xs font-bold text-text-muted">السعر</th>
-                <th className="p-4 text-xs font-bold text-text-muted text-center w-24">إجراء</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMeds.length === 0 ? (
-                <tr>
-                  <td colSpan={3} className="p-12 text-center text-text-muted italic">لا توجد سجلات مطابقة</td>
-                </tr>
-              ) : (
-                filteredMeds.map((m) => (
-                  <tr key={m.id} className="border-b border-border/30 last:border-0 hover:bg-bg-main/50 transition-colors">
-                    <td className="p-4 font-bold">{m.name}</td>
-                    <td className="p-4 font-black text-primary">{m.price} ج.م</td>
-                    <td className="p-4 text-center">
-                      <button 
-                        onClick={() => setMeds(meds.filter(x => x.id !== m.id))}
-                        className="p-2 text-danger hover:bg-danger/10 rounded-lg transition-colors"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <button 
-        onClick={confirmStartNewDay}
-        className="w-full h-16 border-2 border-dashed border-primary/40 hover:border-primary text-primary font-bold rounded-2xl flex items-center justify-center gap-2 transition-all hover:bg-primary/5"
-      >
-        <RotateCcw className="w-5 h-5" /> بدء يوم جديد وأرشفة الحالي
-      </button>
-    </div>
-  );
-
-  const AIView = () => (
-    <div className="w-full max-w-4xl h-[75vh] bg-bg-card rounded-[32px] border border-border shadow-xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-500">
-      <div className="p-6 bg-primary text-white flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
-            <Bot size={28} />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold leading-none text-white">المساعد الذكي</h2>
-            <span className="text-xs text-white/70">متصل وجاهز للمساعدة</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-xs font-bold">نشط</span>
-        </div>
-      </div>
-
-      <div 
-        ref={chatScrollRef}
-        className="flex-grow p-8 overflow-y-auto space-y-6 bg-slate-50 dark:bg-slate-900/30"
-      >
-        {chatMessages.map(msg => (
-          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] p-5 rounded-[24px] text-base leading-relaxed shadow-sm ${
-              msg.role === 'user' 
-                ? 'bg-primary text-white rounded-br-none' 
-                : 'bg-bg-card text-text-main border border-border rounded-bl-none'
-            }`}>
-              {msg.role === 'assistant' && (
-                <div className="flex items-center gap-2 mb-2 text-primary">
-                  <Sparkles size={16} />
-                  <span className="text-[10px] font-black uppercase">الرد الذكي</span>
-                </div>
-              )}
-              {msg.content}
-            </div>
-          </div>
-        ))}
-        {isTyping && (
-          <div className="flex justify-start">
-            <div className="bg-bg-card border border-border p-4 rounded-[24px] rounded-bl-none shadow-sm flex items-center gap-3">
-              <Loader2 className="w-5 h-5 text-primary animate-spin" />
-              <span className="text-sm font-bold text-text-muted">جاري المعالجة...</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="p-6 border-t border-border bg-bg-card">
-        <form 
-          onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}
-          className="flex items-center gap-4 px-6 h-16 bg-bg-main border-2 border-transparent focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/5 rounded-2xl transition-all shadow-inner"
-        >
-          <input 
-            type="text" 
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            placeholder="اسأل عن الأدوية، الجرعات، أو موانع الاستعمال..."
-            className="flex-grow bg-transparent outline-none text-right font-medium"
-          />
-          <button 
-            type="submit"
-            disabled={!chatInput.trim() || isTyping}
-            className="w-12 h-12 bg-primary hover:bg-primary-hover disabled:opacity-30 text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95"
-          >
-            <Send className="w-5 h-5 rotate-180" />
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-
-  const ReportsView = () => {
-    const chartData = useMemo(() => {
-      return [...history].reverse().slice(-7).map(h => ({
-        name: h.date.split('،')[1]?.trim().split(' ')[0] || h.date,
-        total: h.total
-      }));
-    }, [history]);
-
-    const totalRevenue = history.reduce((sum, h) => sum + h.total, 0);
-    const totalOps = history.reduce((sum, h) => sum + h.meds.length, 0);
-
-    return (
-      <div className="w-full max-w-5xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-8 bg-bg-card border border-border rounded-[32px] shadow-sm flex flex-col items-center text-center">
-            <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-4">
-              <Wallet size={28} />
-            </div>
-            <h4 className="text-text-muted text-sm font-bold mb-1">إجمالي الأرباح</h4>
-            <div className="text-3xl font-black text-primary">{totalRevenue.toFixed(2)}</div>
-          </div>
-          <div className="p-8 bg-bg-card border border-border rounded-[32px] shadow-sm flex flex-col items-center text-center">
-            <div className="w-14 h-14 bg-accent/10 rounded-2xl flex items-center justify-center text-accent mb-4">
-              <Activity size={28} />
-            </div>
-            <h4 className="text-text-muted text-sm font-bold mb-1">إجمالي العمليات</h4>
-            <div className="text-3xl font-black text-accent">{totalOps}</div>
-          </div>
-          <div className="p-8 bg-bg-card border border-border rounded-[32px] shadow-sm flex flex-col items-center text-center">
-            <div className="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 mb-4">
-              <Calendar size={28} />
-            </div>
-            <h4 className="text-text-muted text-sm font-bold mb-1">الأيام النشطة</h4>
-            <div className="text-3xl font-black text-indigo-500">{history.length}</div>
-          </div>
-        </div>
-
-        <div className="bg-bg-card p-8 rounded-[32px] border border-border shadow-md">
-          <h3 className="text-xl font-black mb-8 flex items-center gap-2">
-            <BarChart3 className="text-primary" /> نمو المبيعات (آخر ٧ أيام)
-          </h3>
-          <div className="h-[350px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px' }}
-                />
-                <Area type="monotone" dataKey="total" stroke="var(--primary)" strokeWidth={4} fillOpacity={1} fill="url(#colorTotal)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="bg-bg-card p-8 rounded-[32px] border border-border shadow-md">
-          <h3 className="text-xl font-black mb-6">الأيام السابقة بالتفصيل</h3>
-          <div className="flex flex-col gap-4">
-            {history.length === 0 ? (
-              <p className="text-center py-12 text-text-muted italic">لا يوجد سجل تاريخي متاح حالياً</p>
-            ) : (
-              history.map((record, i) => (
-                <div key={i} className="flex flex-col md:flex-row items-center justify-between p-6 bg-bg-main border border-border rounded-2xl hover:border-primary transition-colors gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-white dark:bg-bg-card border border-border rounded-xl flex items-center justify-center font-bold text-text-muted">
-                      {i + 1}
-                    </div>
-                    <div>
-                      <h5 className="font-bold">{record.date}</h5>
-                      <span className="text-xs text-text-muted font-bold uppercase">{record.meds.length} عملية بيع</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-xl font-black text-primary">{record.total.toFixed(2)} ج.م</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="w-full h-32 bg-slate-100 dark:bg-slate-800/50 rounded-[32px] border-2 border-dashed border-border flex items-center justify-center text-text-muted italic">
-          مساحة إعلانية مستقبلية
-        </div>
-      </div>
-    );
-  };
-
-  const StaticView = ({ type }: { type: 'about' | 'contact' | 'privacy' }) => {
-    const titles = { about: 'عن المنصة', contact: 'اتصل بنا', privacy: 'سياسة الخصوصية' };
-    return (
-      <div className="w-full max-w-4xl bg-bg-card p-12 rounded-[40px] border border-border shadow-xl space-y-8 animate-in fade-in scale-95 duration-500">
-        <h2 className="text-4xl font-black text-text-main text-center">{titles[type]}</h2>
-        
-        {type === 'about' && (
-          <div className="prose prose-slate dark:prose-invert max-w-none space-y-6">
-            <p className="text-lg text-text-muted text-center leading-relaxed">
-              تعد منصة الصيدلية الذكية رائدة في توفير الحلول الرقمية للصيادلة في الوطن العربي، حيث ندمج سهولة الإدارة مع كفاءة الذكاء الاصطناعي لتوفير تجربة عمل سلسة ومثمرة.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-8">
-              <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-border">
-                <CheckCircle2 className="text-primary mb-3" />
-                <h4 className="font-bold mb-2">رؤيتنا</h4>
-                <p className="text-sm opacity-80">تحويل كل صيدلية إلى وحدة ذكية تعمل بأقصى كفاءة وبأقل مجهود يدوي.</p>
-              </div>
-              <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-border">
-                <CheckCircle2 className="text-primary mb-3" />
-                <h4 className="font-bold mb-2">قيمة العمل</h4>
-                <p className="text-sm opacity-80">الدقة المطلقة في الحسابات وتوفير المعلومات الطبية الفورية والموثوقة.</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {type === 'contact' && (
-          <div className="space-y-10">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-center">
-              <div className="p-8 bg-slate-50 dark:bg-slate-800 rounded-[32px] space-y-4">
-                 <Mail className="w-12 h-12 text-primary mx-auto" />
-                 <h4 className="font-bold">البريد الإلكتروني</h4>
-                 <p className="text-primary font-bold">support@smartpharm.com</p>
-              </div>
-              <div className="p-8 bg-slate-50 dark:bg-slate-800 rounded-[32px] space-y-4">
-                 <Users className="w-12 h-12 text-primary mx-auto" />
-                 <h4 className="font-bold">الدعم الفني</h4>
-                 <p className="text-primary font-bold">متاح ٢٤/٧ لصيادلتنا</p>
-              </div>
-            </div>
-            <form className="bg-bg-main p-8 rounded-3xl border border-border space-y-6">
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold">الاسم</label>
-                    <input className="w-full h-12 px-4 bg-bg-card border border-border rounded-xl outline-none focus:border-primary" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold">البريد</label>
-                    <input className="w-full h-12 px-4 bg-bg-card border border-border rounded-xl outline-none focus:border-primary" />
-                  </div>
-               </div>
-               <div className="space-y-2">
-                  <label className="text-sm font-bold">الرسالة</label>
-                  <textarea className="w-full h-32 p-4 bg-bg-card border border-border rounded-xl outline-none focus:border-primary resize-none" />
-               </div>
-               <button className="w-full h-14 bg-primary text-white font-bold rounded-2xl shadow-lg shadow-primary/20 hover:bg-primary-hover transition-all">إرسال الاستفسار</button>
-            </form>
-          </div>
-        )}
-
-        {type === 'privacy' && (
-          <div className="space-y-6 text-right leading-loose">
-            <section className="space-y-3">
-              <h3 className="text-xl font-bold border-r-4 border-primary pr-3">خصوصية البيانات</h3>
-              <p className="text-text-muted">نحن نؤمن بأن بيانات صيدليتك هي ملكك بالكامل. يتم تخزين جميع السجلات محلياً في متصفحك ولا نطلع على مبيعاتك أو بيانات مرضاك.</p>
-            </section>
-            <section className="space-y-3">
-              <h3 className="text-xl font-bold border-r-4 border-primary pr-3">مساعد الذكاء الاصطناعي</h3>
-              <p className="text-text-muted">عند استخدام الشات، يتم إرسال الأسئلة لمعالجتها دون تخزين معلومات شخصية مرتبطة بها، وذلك لضمان جودة الردود الطبية.</p>
-            </section>
-            <section className="space-y-3">
-              <h3 className="text-xl font-bold border-r-4 border-primary pr-3">التحديثات المستمرة</h3>
-              <p className="text-text-muted">نقوم بتحديث بروتوكولات الأمان دورياً لضمان استقرار المنصة وحماية بيانات المستخدمين من أي تهديدات تقنية.</p>
-            </section>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // --- UI Parts ---
-  
-  const NavItem = ({ view, icon, label }: { view: View, icon: any, label: string }) => (
-    <button 
-      onClick={() => { setCurrentView(view); setIsSidebarOpen(false); }}
-      className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold transition-all ${
-        currentView === view 
-          ? 'bg-primary text-white shadow-lg shadow-primary/20 translate-x-1' 
-          : 'text-text-muted hover:bg-primary/5 hover:text-primary'
-      }`}
-    >
-      {icon}
-      <span className="text-sm">{label}</span>
-      {currentView === view && (
-        <motion.div layoutId="nav-pill" className="mr-auto w-1.5 h-6 bg-white rounded-full" />
-      )}
-    </button>
-  );
-
   return (
     <div className="min-h-screen bg-bg-main text-text-main flex flex-col md:flex-row font-sans selection:bg-primary/20">
       
@@ -660,14 +710,14 @@ export default function App() {
             </div>
 
             <div className="flex-grow space-y-2">
-              <NavItem view="home" icon={<Home size={20} />} label="الرئيسية" />
-              <NavItem view="pharmacy" icon={<LayoutDashboard size={20} />} label="إدارة الصيدلية" />
-              <NavItem view="ai" icon={<Bot size={20} />} label="المساعد الذكي" />
-              <NavItem view="reports" icon={<BarChart3 size={20} />} label="التقارير اليومية" />
+              <NavItem view="home" icon={<Home size={20} />} label="الرئيسية" currentView={currentView} setCurrentView={setCurrentView} setIsSidebarOpen={setIsSidebarOpen} />
+              <NavItem view="pharmacy" icon={<LayoutDashboard size={20} />} label="إدارة الصيدلية" currentView={currentView} setCurrentView={setCurrentView} setIsSidebarOpen={setIsSidebarOpen} />
+              <NavItem view="ai" icon={<Bot size={20} />} label="المساعد الذكي" currentView={currentView} setCurrentView={setCurrentView} setIsSidebarOpen={setIsSidebarOpen} />
+              <NavItem view="reports" icon={<BarChart3 size={20} />} label="التقارير اليومية" currentView={currentView} setCurrentView={setCurrentView} setIsSidebarOpen={setIsSidebarOpen} />
               <div className="py-4 opacity-30 px-6 font-bold text-[10px] uppercase tracking-[2px]">معلومات</div>
-              <NavItem view="about" icon={<Info size={20} />} label="عن المنصة" />
-              <NavItem view="contact" icon={<Mail size={20} />} label="اتصل بنا" />
-              <NavItem view="privacy" icon={<Shield size={20} />} label="الخصوصية" />
+              <NavItem view="about" icon={<Info size={20} />} label="عن المنصة" currentView={currentView} setCurrentView={setCurrentView} setIsSidebarOpen={setIsSidebarOpen} />
+              <NavItem view="contact" icon={<Mail size={20} />} label="اتصل بنا" currentView={currentView} setCurrentView={setCurrentView} setIsSidebarOpen={setIsSidebarOpen} />
+              <NavItem view="privacy" icon={<Shield size={20} />} label="الخصوصية" currentView={currentView} setCurrentView={setCurrentView} setIsSidebarOpen={setIsSidebarOpen} />
             </div>
 
             <div className="pt-6 border-t border-border space-y-4">
@@ -717,11 +767,37 @@ export default function App() {
                 transition={{ duration: 0.3 }}
                 className="w-full flex flex-col items-center"
               >
-                {currentView === 'home' && <HeroSection />}
-                {currentView === 'pharmacy' && <PharmacyView />}
-                {currentView === 'ai' && <AIView />}
-                {currentView === 'reports' && <ReportsView />}
-                {(currentView === 'about' || currentView === 'contact' || currentView === 'privacy') && <StaticView type={currentView} />}
+                {currentView === 'home' && <HeroSection setCurrentView={setCurrentView} />}
+                {currentView === 'pharmacy' && (
+                  <PharmacyView 
+                    meds={meds} 
+                    calculateTotal={calculateTotal}
+                    name={name}
+                    setName={setName}
+                    price={price}
+                    setPrice={setPrice}
+                    addMed={addMed}
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    filteredMeds={filteredMeds}
+                    confirmStartNewDay={confirmStartNewDay}
+                    deleteMed={(id) => setMeds(meds.filter(x => x.id !== id))}
+                  />
+                )}
+                {currentView === 'ai' && (
+                  <AIView 
+                    chatMessages={chatMessages}
+                    isTyping={isTyping}
+                    chatScrollRef={chatScrollRef}
+                    chatInput={chatInput}
+                    setChatInput={setChatInput}
+                    handleSendMessage={handleSendMessage}
+                  />
+                )}
+                {currentView === 'reports' && <ReportsView history={history} />}
+                {(currentView === 'about' || currentView === 'contact' || currentView === 'privacy') && (
+                  <StaticView type={currentView} />
+                )}
               </motion.div>
            </AnimatePresence>
         </div>
